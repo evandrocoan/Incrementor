@@ -38,14 +38,20 @@ class IncrementorCommand(sublime_plugin.TextCommand):
     def match_gen(self, regex):
         """"""
         position = 0
+        maximum_replacements = 200
+
         while True:
             region = self.view.find(regex, position)
-            if region:
+            maximum_replacements -= 1
+
+            if region and maximum_replacements > 0:
                 yield region
-                if region.size() > 1:
+
+                if region.size() > 2:
                     position = region.end() - 1
                 else:
                     position = region.end()
+
             else:
                 break
 
@@ -118,59 +124,137 @@ class IncrementorCommand(sublime_plugin.TextCommand):
     def run(self, edit, regex_to_find, replace_matches_with):
         """"""
         positiveMatch = []
+        # print( "debug, 1 regex_to_find", regex_to_find, 'replace_matches_with', replace_matches_with )
 
         def regionSort(thisList):
             """"""
+
+            # print( "debug, 2 thisList", thisList )
             for region in thisList:
                 currentBegin = region.begin()
-                currentEnd = region.end()
-                if currentBegin > currentEnd:
-                    region = sublime.Region(currentEnd, currentBegin)
 
+                # print( "debug, 3 currentBegin", currentBegin )
+                currentEnd = region.end()
+
+                # print( "debug, 4 currentEnd", currentEnd )
+                if currentBegin > currentEnd:
+
+                    region = sublime.Region(currentEnd, currentBegin)
+                    # print( "debug, 5 region", region )
+
+            # print( "debug, 6" )
             return sorted(thisList, key=lambda region: region.begin())
 
         startRegions = self.view.get_regions('Incrementor')
+
+        # print( "debug, 7 startRegions", startRegions )
         startRegions = regionSort(startRegions)
+
+        # print( "debug, 8" )
         view = self.view
+
+        # print( "debug, 9" )
         reFind = re.compile(regex_to_find)
+
+        # print( "debug, 10 reFind", reFind )
         myReplace = self.parse_replace(replace_matches_with)
+
+        # print( "debug, 11 myReplace", myReplace )
         nEmptyRegions = []
 
+        # print( "debug, 12" )
         if startRegions and replace_matches_with:
-            # Check if regions are in the given selections.
+            # print( "debug, 13, Check if regions are in the given selections" )
             positiveMatch = []
-            # Create list of non-empty regions.
+
+            # print( "debug, 14, Create list of non-empty regions" )
             nEmptyRegions = [sRegion for sRegion in startRegions if not sRegion.empty()]
 
-        # If there is at least one empty region proceed to check in matches are in region.
+
+        # print( "debug, 15 startRegions", startRegions )
+        # print( "debug, 16 If there is at least one empty region proceed to check in matches are in region" )
         if len(nEmptyRegions) == 0:
+
+            # print( "debug, 17" )
             positiveMatch = self.match_gen(regex_to_find)
+
             for match in positiveMatch:
+
+                # print( "debug, 18 match", match )
                 myString = view.substr(match)
+
+                # print( "debug, 19 myString", myString )
                 newString = reFind.sub(partial(self.inc_replace, myReplace), myString)
+
+                # print( "debug, 20 newString", newString )
                 view.replace(edit, match, newString)
         else:
+
+            # print( "debug, 21" )
             adjust = 0
             for sRegion in startRegions:
+
+                # print( "debug, 22 sRegion", sRegion )
                 matchRegions = self.match_gen(regex_to_find)
+
+                # print( "debug, 23 adjust", adjust )
                 if adjust:
+                    # print( "debug, 24 matchRegions", matchRegions )
                     newBeg = sRegion.begin() + adjust
+
+                    # print( "debug, 25 newBeg", newBeg )
                     newEnd = sRegion.end() + adjust
+
+                    # print( "debug, 26 newEnd", newEnd )
                     sRegion = sublime.Region(newBeg, newEnd)
+
+                    # print( "debug, 27 sRegion", sRegion )
+
+                # print( "debug, 28" )
                 for mRegion in matchRegions:
+
+                    # print( "debug, 29" , mRegion)
                     if sRegion.contains(mRegion):
+
+                        # print( "debug, 30" , sRegion)
                         myString = view.substr(mRegion)
+
+                        # print( "debug, 31" , myString)
                         newString = reFind.sub(partial(self.inc_replace, myReplace), myString)
+
+                        # print( "debug, 32" , newString)
                         view.erase(edit, mRegion)
+
+                        # print( "debug, 33" )
                         charLen = view.insert(edit, mRegion.begin(), newString)
+
+                        # print( "debug, 34" , charLen)
                         adjustment = charLen - mRegion.size()
+
+                        # print( "debug, 35" )
                         adjust = adjust + adjustment
+
+                        # print( "debug, 36" , adjust)
                         newEnd = sRegion.end() + adjustment
+
+                        # print( "debug, 37" , newEnd)
                         sRegion = sublime.Region(sRegion.begin(), newEnd)
+
+                        # print( "debug, 38" , sRegion)
+
+        # print( "debug, 39 positiveMatch", positiveMatch )
         for match in positiveMatch:
+
+            # print( "debug, 40 match", match )
             myString = view.substr(match)
+
+            # print( "debug, 41 myString", myString )
             newString = reFind.sub(partial(self.inc_replace, myReplace), myString)
+
+            # print( "debug, 42 newString", newString )
             view.replace(edit, match, newString)
+
+        # print( "debug, 43" )
         on_cancel( view )
 
 
