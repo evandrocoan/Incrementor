@@ -7,12 +7,26 @@ A Sublime Text 3 Plugin that can generate a sequence of numbers and letters usin
 
 Ported to ST3 from Incrementor for ST2 created on 10-Jul-2012 by eBookArchitects
 https://github.com/eBookArchitects/Incrementor
+
+@copy: [Creative Commons Attribution 2.0 Generic](http://creativecommons.org/licenses/by/2.0/)
+@python-ver: Python 2.6
 """
 import sublime
 import sublime_plugin
 import re
 from functools import partial
 from types import GeneratorType
+
+
+class State(object):
+    last_find_input = ""
+    last_replace_input = ""
+    selected_regions = []
+
+
+def on_cancel(view):
+    view.erase_regions( 'Incrementor' )
+    view.sel().add_all( State.selected_regions )
 
 
 class IncrementorCommand(sublime_plugin.TextCommand):
@@ -120,6 +134,7 @@ class IncrementorCommand(sublime_plugin.TextCommand):
         view = self.view
         reFind = re.compile(regex_to_find)
         myReplace = self.parse_replace(replace_matches_with)
+        nEmptyRegions = []
 
         if startRegions and replace_matches_with:
             # Check if regions are in the given selections.
@@ -156,21 +171,18 @@ class IncrementorCommand(sublime_plugin.TextCommand):
             myString = view.substr(match)
             newString = reFind.sub(partial(self.inc_replace, myReplace), myString)
             view.replace(edit, match, newString)
-        view.erase_regions('Incrementor')
+        on_cancel( view )
 
 
-class IncrementorHighlight:
+class IncrementorHighlightCommand(sublime_plugin.TextCommand):
     """Highlights regions or regular expression matches."""
 
-    def __init__(self, view):
-        """"""
-        self.view = view
-
-    def run(self, match=None, startRegions=None):
-        """"""
+    def run(self, edit, regex=None):
         view = self.view
-        if startRegions and match:
-            matchRegions = view.find_all(match)
+        startRegions = State.selected_regions
+
+        if startRegions and regex:
+            matchRegions = view.find_all(regex)
             # Check if regions are in the given selections.
             positiveMatch = []
             # Create list of non-empty regions.
@@ -193,32 +205,46 @@ class IncrementorPromptCommand(sublime_plugin.WindowCommand):
     """Prompts for find and replace strings."""
 
     def highlighter(self, regex=None):
-        highlighter = IncrementorHighlight(view=self.window.active_view())
+        view=self.window.active_view()
         if regex:
-            highlighter.run(match=regex, startRegions=self.selected_regions)
-        else:
-            highlighter.run()
+            State.last_find_input = regex
+        view.run_command( 'incrementor_highlight', { 'regex': regex } )
+
+    def on_cancel(self):
+        on_cancel(self.window.active_view())
 
     def show_find_panel(self):
-        self.window.show_input_panel('Find (w/ RegEx) :', '', on_done=self.find_callback_on_done, on_change=self.highlighter, on_cancel=self.highlighter)
+        self.window.show_input_panel('Find (w/ RegEx) :', State.last_find_input, on_done=self.find_callback_on_done, on_change=self.highlighter, on_cancel=self.on_cancel)
 
     def find_callback_on_done(self, find):
         self.regex_to_find = find
+        State.last_find_input = find
         self.show_replace_panel()
 
     def show_replace_panel(self):
-        self.window.show_input_panel('Replace (w/o RegEx) :', '', on_done=self.replace_callback_on_done, on_cancel=self.highlighter, on_change=None)
+        self.window.show_input_panel('Replace (w/o RegEx) :', State.last_replace_input, on_done=self.replace_callback_on_done, on_cancel=self.on_cancel, on_change=None)
 
     def replace_callback_on_done(self, replace):
         self.replace_matches_with = replace
+        State.last_replace_input = replace
+
         # Call IncrementorCommand to actually make the replacements
         self.window.active_view().run_command('incrementor', {'regex_to_find': self.regex_to_find, 'replace_matches_with': self.replace_matches_with})
 
     def run(self):
         """"""
         self.window.active_view().erase_regions('Incrementor')
-        self.selected_regions = []
-        for selection in self.window.active_view().sel():
-            region = sublime.Region(selection.end(), selection.begin())
-            self.selected_regions.append(region)
+        State.selected_regions = []
+        selections = self.window.active_view().sel()
+
+        if selections:
+            first_selection = selections[0]
+
+            for selection in selections:
+                region = sublime.Region(selection.end(), selection.begin())
+                State.selected_regions.append(region)
+
+            selections.clear()
+            selections.add( sublime.Region( first_selection.begin(), first_selection.begin() ) )
+
         self.show_find_panel()

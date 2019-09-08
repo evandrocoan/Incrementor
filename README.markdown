@@ -11,7 +11,7 @@ Example (Before):
     15. Billy
 
 > Find: `[0-9]+\.`
-> Replace: `\i\.`
+> Replace: `\i.`
 
 Example (After):
 
@@ -28,7 +28,7 @@ Example (Before):
     15. Billy
 
 > Find: `[0-9]+\.`
-> Replace: `\i(10,10)\.`
+> Replace: `\i(10,10).`
 
 Example (After):
 
@@ -45,7 +45,7 @@ Example (Before):
     15. Billy
 
 > Find: `[0-9]+\.`
-> Replace: `\i(100,-10)\.`
+> Replace: `\i(100,-10).`
 
 Example (After):
 
