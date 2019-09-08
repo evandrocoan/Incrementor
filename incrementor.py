@@ -21,12 +21,14 @@ from types import GeneratorType
 class State(object):
     last_find_input = ""
     last_replace_input = ""
-    selected_regions = []
 
 
 def on_cancel(view):
-    view.erase_regions( 'Incrementor' )
-    view.sel().add_all( State.selected_regions )
+    selected_regions = view.get_regions( 'IncrementorBackup' )
+    view.sel().add_all( selected_regions )
+
+    view.erase_regions( 'IncrementorMarks' )
+    view.erase_regions( 'IncrementorBackup' )
 
 
 class IncrementorCommand(sublime_plugin.TextCommand):
@@ -145,7 +147,7 @@ class IncrementorCommand(sublime_plugin.TextCommand):
             # print( "debug, 6" )
             return sorted(thisList, key=lambda region: region.begin())
 
-        startRegions = self.view.get_regions('Incrementor')
+        startRegions = self.view.get_regions( 'IncrementorMarks' )
 
         # print( "debug, 7 startRegions", startRegions )
         startRegions = regionSort(startRegions)
@@ -263,7 +265,7 @@ class IncrementorHighlightCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, regex=None):
         view = self.view
-        startRegions = State.selected_regions
+        startRegions = view.get_regions( 'IncrementorBackup' )
 
         if startRegions and regex:
             matchRegions = view.find_all(regex)
@@ -280,25 +282,31 @@ class IncrementorHighlightCommand(sublime_plugin.TextCommand):
                         if sRegion.contains(mRegion):
                             positiveMatch.append(mRegion)
 
-            view.add_regions('Incrementor', positiveMatch, 'comment', '', sublime.DRAW_OUTLINED)
+            view.add_regions( 'IncrementorMarks', positiveMatch, 'comment', '', sublime.DRAW_OUTLINED )
         else:
-            view.erase_regions('Incrementor')
+            view.erase_regions( 'IncrementorMarks' )
 
 
-class IncrementorPromptCommand(sublime_plugin.WindowCommand):
+class IncrementorPromptPanelCommand(sublime_plugin.WindowCommand):
     """Prompts for find and replace strings."""
 
     def highlighter(self, regex=None):
         view=self.window.active_view()
-        if regex:
-            State.last_find_input = regex
+
+        if regex: State.last_find_input = regex
         view.run_command( 'incrementor_highlight', { 'regex': regex } )
 
     def on_cancel(self):
         on_cancel(self.window.active_view())
 
     def show_find_panel(self):
-        self.window.show_input_panel('Find (w/ RegEx) :', State.last_find_input, on_done=self.find_callback_on_done, on_change=self.highlighter, on_cancel=self.on_cancel)
+        self.window.show_input_panel(
+                'Find (w/ RegEx) :',
+                State.last_find_input,
+                on_done=self.find_callback_on_done,
+                on_change=self.highlighter,
+                on_cancel=self.on_cancel
+            )
 
     def find_callback_on_done(self, find):
         self.regex_to_find = find
@@ -306,29 +314,122 @@ class IncrementorPromptCommand(sublime_plugin.WindowCommand):
         self.show_replace_panel()
 
     def show_replace_panel(self):
-        self.window.show_input_panel('Replace (w/o RegEx) :', State.last_replace_input, on_done=self.replace_callback_on_done, on_cancel=self.on_cancel, on_change=None)
+        self.window.show_input_panel(
+                'Replace (w/o RegEx) :',
+                State.last_replace_input,
+                on_done=self.replace_callback_on_done,
+                on_cancel=self.on_cancel,
+                on_change=None
+            )
 
     def replace_callback_on_done(self, replace):
         self.replace_matches_with = replace
         State.last_replace_input = replace
 
         # Call IncrementorCommand to actually make the replacements
-        self.window.active_view().run_command('incrementor', {'regex_to_find': self.regex_to_find, 'replace_matches_with': self.replace_matches_with})
+        self.window.active_view().run_command(
+                'incrementor', { 'regex_to_find': self.regex_to_find, 'replace_matches_with': self.replace_matches_with } )
 
     def run(self):
         """"""
-        self.window.active_view().erase_regions('Incrementor')
-        State.selected_regions = []
-        selections = self.window.active_view().sel()
-
-        if selections:
-            first_selection = selections[0]
-
-            for selection in selections:
-                region = sublime.Region(selection.end(), selection.begin())
-                State.selected_regions.append(region)
-
-            selections.clear()
-            selections.add( sublime.Region( first_selection.begin(), first_selection.begin() ) )
-
+        setup_system( self.window.active_view() )
         self.show_find_panel()
+
+def setup_system(view):
+    view.erase_regions( 'IncrementorMarks' )
+
+    selected_regions = []
+    selections = view.sel()
+
+    if selections:
+        first_selection = selections[0]
+
+        for selection in selections:
+            region = sublime.Region(selection.end(), selection.begin())
+            selected_regions.append(region)
+
+        view.add_regions( 'IncrementorMarks', selected_regions )
+        view.add_regions( 'IncrementorBackup', selected_regions )
+
+        selections.clear()
+        selections.add( sublime.Region( first_selection.begin(), first_selection.begin() ) )
+
+
+class IncrementorPromptInputHandlerCommand(sublime_plugin.WindowCommand):
+
+    def input(self, args):
+        if "find_regex" not in args:
+            view = self.window.active_view()
+            setup_system( view )
+            return IncrementorFindRegexInputHandler( view )
+
+        elif "replace_regex" not in args:
+            return IncrementorReplaceInputHandler( self.window.active_view() )
+
+        else:
+            return None
+
+    def run(self, find_regex, replace_regex):
+        self.window.active_view().run_command(
+                'incrementor', {'regex_to_find': find_regex, 'replace_matches_with': replace_regex} )
+
+
+class IncrementorFindRegexInputHandler(sublime_plugin.TextInputHandler):
+    def __init__(self, view):
+        self.view = view
+
+    def name(self):
+        return "find_regex"
+
+    def placeholder(self):
+        return "Find regex:"
+
+    def cancel(self):
+        on_cancel( self.view )
+
+    def initial_text(self):
+        return State.last_find_input
+
+    def preview(self, text):
+        self.view.run_command( 'incrementor_highlight', { 'regex': text } )
+
+    def confirm(self, text):
+        State.last_find_input = text
+        self.view.run_command( 'incrementor_highlight', { 'regex': text } )
+
+    def validate(self, find_regex):
+
+        if len( find_regex ):
+            try:
+                return bool( re.compile( find_regex ) )
+
+            except Exception as error:
+                print( "Incrementor: '%s'" % error )
+
+    def next_input(self, args):
+
+        if "replace_regex" not in args:
+            return IncrementorReplaceInputHandler( self.view )
+
+
+class IncrementorReplaceInputHandler(sublime_plugin.TextInputHandler):
+    def __init__(self, view):
+        self.view = view
+
+    def name(self):
+        return "replace_regex"
+
+    def placeholder(self):
+        return "Replace regex:"
+
+    def cancel(self):
+        on_cancel( self.view )
+
+    def initial_text(self):
+        return State.last_replace_input
+
+    def confirm(self, text):
+        State.last_replace_input = text
+
+    def validate(self, text):
+        return bool( text )

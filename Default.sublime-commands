@@ -1,3 +1,4 @@
 [
-    { "caption": "Incrementor: Generate a sequence of numbers", "command": "incrementor_prompt" },
+    { "caption": "Incrementor: Input Handler", "command": "incrementor_prompt_input_handler" },
+    { "caption": "Incrementor: Generate a sequence of numbers", "command": "incrementor_prompt_panel" },
 ]
