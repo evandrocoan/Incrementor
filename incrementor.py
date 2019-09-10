@@ -448,7 +448,7 @@ class IncrementorPromptInputHandlerCommand(sublime_plugin.WindowCommand):
         sublime.set_timeout( delayed )
 
 
-class LivePreviewInputHandler(sublime_plugin.TextInputHandler):
+class LivePreviewInputHandler(object):
     """ https://github.com/jbrooksuk/InsertNums/blob/master/InsertNums.py#L157 """
     def __init__(self, command, action):
         self.command = command
@@ -476,9 +476,9 @@ class LivePreviewInputHandler(sublime_plugin.TextInputHandler):
             self.view.run_command( self.action )
 
 
-class IncrementorFindRegexInputHandler(LivePreviewInputHandler):
+class IncrementorFindRegexInputHandler(LivePreviewInputHandler, sublime_plugin.TextInputHandler):
     def __init__(self, view):
-        super().__init__( 'incrementor_highlight', 'soft_undo' )
+        LivePreviewInputHandler.__init__( self, 'incrementor_highlight', 'soft_undo' )
         self.view = view
 
     def name(self):
@@ -527,9 +527,9 @@ class IncrementorFindRegexInputHandler(LivePreviewInputHandler):
             return IncrementorReplaceInputHandler( self.view )
 
 
-class IncrementorReplaceInputHandler(LivePreviewInputHandler):
+class IncrementorReplaceInputHandler(LivePreviewInputHandler, sublime_plugin.TextInputHandler):
     def __init__(self, view):
-        super().__init__( 'incrementor_replace_helper', 'undo' )
+        LivePreviewInputHandler.__init__( self, 'incrementor_replace_helper', 'undo' )
         self.view = view
 
     def name(self):
