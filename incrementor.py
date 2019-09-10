@@ -18,6 +18,8 @@ from functools import partial
 from types import GeneratorType
 
 
+# I am saving the state in this class because it is a royal pain in the ass to keep typing `global`
+# every time/everywhere I would like to use a global!
 class State(object):
     ## While this is not 0, the input panel is open
     view_id = 0
@@ -357,7 +359,6 @@ class LivePreviewInputHandler(object):
 
 
 class IncrementorPromptPanelCommand(LivePreviewInputHandler, sublime_plugin.WindowCommand):
-    """Prompts for find and replace strings."""
     def __init__(self, window):
         sublime_plugin.WindowCommand.__init__( self, window )
 
@@ -365,20 +366,17 @@ class IncrementorPromptPanelCommand(LivePreviewInputHandler, sublime_plugin.Wind
 
         if self.validate_find( text ):
             self.start_preview_mode()
-
-            State.last_find_input = text
-            self.view.run_command( 'incrementor_highlight', { 'regex': text } )
+            self.view.run_command( 'incrementor_highlight' )
 
     def on_cancel(self):
         self.reset_preview_mode()
-        restore_original_selection( self.view )
 
     def show_find_panel(self):
         LivePreviewInputHandler.__init__( self, 'incrementor_highlight', 'soft_undo' )
 
         self.window.show_input_panel(
                 'Find (w/ RegEx) :',
-                State.last_find_input,
+                '',
                 on_done=self.find_callback_on_done,
                 on_change=self.preview_find,
                 on_cancel=self.on_cancel
@@ -386,15 +384,7 @@ class IncrementorPromptPanelCommand(LivePreviewInputHandler, sublime_plugin.Wind
 
     def find_callback_on_done(self, find):
         self.reset_preview_mode()
-        State.last_find_input = find
-
-        # Keep the latest selections history, but discards its regions marks
-        self.view.run_command( 'soft_redo' )
-        selected_regions = self.view.get_regions( 'IncrementorMarks' )
-        self.view.run_command( 'soft_undo' )
-
-        self.view.add_regions( 'IncrementorMarks', selected_regions )
-        self.view.run_command( 'incrementor_selection_mark_restore' )
+        # ...
         self.show_replace_panel()
 
     def validate_find(self, text):
@@ -411,7 +401,7 @@ class IncrementorPromptPanelCommand(LivePreviewInputHandler, sublime_plugin.Wind
 
         self.window.show_input_panel(
                 'Replace (w/o RegEx) :',
-                State.last_replace_input,
+                '',
                 on_done=self.replace_callback_on_done,
                 on_cancel=self.on_cancel,
                 on_change=self.preview_replace
@@ -419,37 +409,19 @@ class IncrementorPromptPanelCommand(LivePreviewInputHandler, sublime_plugin.Wind
 
     def replace_callback_on_done(self, text):
         self.reset_preview_mode()
-        State.last_replace_input = text
-
-        # Call IncrementorCommand to actually make the replacements
-        self.view.run_command( 'incrementor_replace_helper', {
-                'regex_to_find': State.last_find_input,
-                'replace_matches_with': text,
-            } )
+        self.view.run_command( 'incrementor_replace_helper' )
 
     def preview_replace(self, text):
 
         if self.validate_replace( text ):
             self.start_preview_mode()
-
-            def delayed():
-                self.view.run_command( 'incrementor_replace_helper', {
-                        'regex_to_find': State.last_find_input,
-                        'replace_matches_with': text,
-                    } )
-
-            # https://github.com/SublimeTextIssues/Core/issues/2924
-            sublime.set_timeout( delayed )
+            self.view.run_command( 'incrementor_replace_helper' )
 
     def validate_replace(self, text):
         return len( text ) > 1
 
     def run(self):
-        """"""
         self.view = self.window.active_view()
-        # self.view.run_command( 'incrementor_selection_setup' )
-
-        selections_setup( self.view )
         self.show_find_panel()
 
 
@@ -492,9 +464,6 @@ class IncrementorPromptInputHandlerCommand(sublime_plugin.WindowCommand):
     def input(self, args):
         if "find_regex" not in args:
             view = self.window.active_view()
-
-            # view.run_command( 'incrementor_selection_setup' )
-            selections_setup( view )
             return IncrementorFindRegexInputHandler( view )
 
         elif "replace_regex" not in args:
@@ -505,17 +474,7 @@ class IncrementorPromptInputHandlerCommand(sublime_plugin.WindowCommand):
 
     def run(self, find_regex, replace_regex):
         view = self.window.active_view()
-
-        def delayed():
-            view.run_command( 'incrementor_replace_helper', {
-                            'regex_to_find': find_regex,
-                            'replace_matches_with': replace_regex,
-                        } )
-
-            sublime.set_timeout( lambda: view.run_command( 'incrementor_selection_backup_restore' ) )
-
-        # https://github.com/SublimeTextIssues/Core/issues/2924
-        sublime.set_timeout( delayed )
+        view.run_command( 'incrementor_replace_helper' )
 
 
 class IncrementorFindRegexInputHandler(LivePreviewInputHandler, sublime_plugin.TextInputHandler):
@@ -531,27 +490,19 @@ class IncrementorFindRegexInputHandler(LivePreviewInputHandler, sublime_plugin.T
 
     def cancel(self):
         self.reset_preview_mode()
-        restore_original_selection( self.view )
 
     def initial_text(self):
-        return State.last_find_input
+        return ""
 
     def preview(self, text):
 
         if self.validate( text ):
             self.start_preview_mode()
-            sublime.set_timeout( lambda: self.view.run_command( 'incrementor_highlight', { 'regex': text } ) )
+            self.view.run_command( 'incrementor_highlight', { 'regex': text } )
 
     def confirm(self, text):
         self.reset_preview_mode()
-        State.last_find_input = text
-
-        # Keep the latest selections history, but discards its regions marks
-        self.view.run_command( 'soft_redo' )
-        selected_regions = self.view.get_regions( 'IncrementorMarks' )
-        self.view.run_command( 'soft_undo' )
-
-        self.view.add_regions( 'IncrementorMarks', selected_regions )
+        # ...
         self.view.run_command( 'incrementor_selection_mark_restore' )
 
     def validate(self, text):
@@ -581,7 +532,7 @@ class IncrementorReplaceInputHandler(LivePreviewInputHandler, sublime_plugin.Tex
         return "Replace Regex"
 
     def initial_text(self):
-        return State.last_replace_input
+        return ""
 
     def validate(self, text):
         return len( text ) > 1
@@ -590,27 +541,11 @@ class IncrementorReplaceInputHandler(LivePreviewInputHandler, sublime_plugin.Tex
 
         if self.validate( text ):
             self.start_preview_mode()
-
-            def delayed():
-                self.view.run_command( 'incrementor_replace_helper', {
-                        'regex_to_find': State.last_find_input,
-                        'replace_matches_with': text,
-                    } )
-
-            # https://github.com/SublimeTextIssues/Core/issues/2924
-            sublime.set_timeout( delayed )
+            self.view.run_command( 'incrementor_replace_helper' )
 
     def cancel(self):
         self.reset_preview_mode()
-        restore_original_selection( self.view )
 
     def confirm(self, text):
         self.reset_preview_mode()
-        State.last_replace_input = text
-
-
-def status(msg, *args):
-    msg = "[Incrementor] %s" % ( msg % args )
-    print( msg )
-    sublime.status_message( msg )
 
