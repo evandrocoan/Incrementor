@@ -137,7 +137,7 @@ class IncrementorReplaceHelperCommand(sublime_plugin.TextCommand):
             return replace_string
 
         except Exception as error:
-            status( "%s, %s, %s" % ( error, pattern_list, replace_string ) )
+            status( "%s, %s, %s", error, pattern_list, replace_string )
 
     def parse_replace(self, replace):
         """"""
@@ -328,58 +328,128 @@ class IncrementorHighlightCommand(sublime_plugin.TextCommand):
             view.erase_regions( 'IncrementorMarks' )
 
 
-class IncrementorPromptPanelCommand(sublime_plugin.WindowCommand):
+class LivePreviewInputHandler(object):
+    """ https://github.com/jbrooksuk/InsertNums/blob/master/InsertNums.py#L157 """
+    def __init__(self, command, action):
+        self.command = command
+        self.action = action
+
+    def start_preview_mode(self):
+        view = self.view
+
+        if State.view_id:
+            self.revert_changes()
+
+        else:
+            State.view_id = view.id()
+
+    def reset_preview_mode(self):
+        if State.view_id:
+            self.revert_changes()
+            State.view_id = 0
+
+    def revert_changes(self):
+        """ Revert changes for clean undo history """
+        last_command = self.view.command_history( 0 )
+
+        if last_command[0].endswith( self.command ):
+            self.view.run_command( self.action )
+
+
+class IncrementorPromptPanelCommand(LivePreviewInputHandler, sublime_plugin.WindowCommand):
     """Prompts for find and replace strings."""
+    def __init__(self, window):
+        sublime_plugin.WindowCommand.__init__( self, window )
 
-    def highlighter(self, regex=None):
-        view=self.window.active_view()
+    def preview_find(self, text):
 
-        if regex: State.last_find_input = regex
-        view.run_command( 'incrementor_highlight', { 'regex': regex } )
+        if self.validate_find( text ):
+            self.start_preview_mode()
+
+            State.last_find_input = text
+            self.view.run_command( 'incrementor_highlight', { 'regex': text } )
 
     def on_cancel(self):
-        restore_original_selection( self.window.active_view() )
+        self.reset_preview_mode()
+        restore_original_selection( self.view )
 
     def show_find_panel(self):
+        LivePreviewInputHandler.__init__( self, 'incrementor_highlight', 'soft_undo' )
+
         self.window.show_input_panel(
                 'Find (w/ RegEx) :',
                 State.last_find_input,
                 on_done=self.find_callback_on_done,
-                on_change=self.highlighter,
+                on_change=self.preview_find,
                 on_cancel=self.on_cancel
             )
 
     def find_callback_on_done(self, find):
-        self.regex_to_find = find
+        self.reset_preview_mode()
         State.last_find_input = find
+
+        # Keep the latest selections history, but discards its regions marks
+        self.view.run_command( 'soft_redo' )
+        selected_regions = self.view.get_regions( 'IncrementorMarks' )
+        self.view.run_command( 'soft_undo' )
+
+        self.view.add_regions( 'IncrementorMarks', selected_regions )
+        self.view.run_command( 'incrementor_selection_mark_restore' )
         self.show_replace_panel()
 
+    def validate_find(self, text):
+
+        if len( text ):
+            try:
+                return bool( re.compile( text ) )
+
+            except Exception as error:
+                status( "%s, %s", text, error )
+
     def show_replace_panel(self):
+        LivePreviewInputHandler.__init__( self, 'incrementor_replace_helper', 'undo' )
+
         self.window.show_input_panel(
                 'Replace (w/o RegEx) :',
                 State.last_replace_input,
                 on_done=self.replace_callback_on_done,
                 on_cancel=self.on_cancel,
-                on_change=None
+                on_change=self.preview_replace
             )
 
-    def replace_callback_on_done(self, replace):
-        view = self.window.active_view()
-
-        self.replace_matches_with = replace
-        State.last_replace_input = replace
+    def replace_callback_on_done(self, text):
+        self.reset_preview_mode()
+        State.last_replace_input = text
 
         # Call IncrementorCommand to actually make the replacements
-        view.run_command( 'incrementor_replace_helper', {
-                'regex_to_find': self.regex_to_find,
-                'replace_matches_with': self.replace_matches_with,
+        self.view.run_command( 'incrementor_replace_helper', {
+                'regex_to_find': State.last_find_input,
+                'replace_matches_with': text,
             } )
+
+    def preview_replace(self, text):
+
+        if self.validate_replace( text ):
+            self.start_preview_mode()
+
+            def delayed():
+                self.view.run_command( 'incrementor_replace_helper', {
+                        'regex_to_find': State.last_find_input,
+                        'replace_matches_with': text,
+                    } )
+
+            # https://github.com/SublimeTextIssues/Core/issues/2924
+            sublime.set_timeout( delayed )
+
+    def validate_replace(self, text):
+        return len( text ) > 1
 
     def run(self):
         """"""
-        view = self.window.active_view()
-        # view.run_command( 'incrementor_selection_setup' )
-        selections_setup( view )
+        self.view = self.window.active_view()
+        # self.view.run_command( 'incrementor_selection_setup' )
+
+        selections_setup( self.view )
         self.show_find_panel()
 
 
@@ -448,34 +518,6 @@ class IncrementorPromptInputHandlerCommand(sublime_plugin.WindowCommand):
         sublime.set_timeout( delayed )
 
 
-class LivePreviewInputHandler(object):
-    """ https://github.com/jbrooksuk/InsertNums/blob/master/InsertNums.py#L157 """
-    def __init__(self, command, action):
-        self.command = command
-        self.action = action
-
-    def start_preview_mode(self):
-        view = self.view
-
-        if State.view_id:
-            self.revert_changes()
-
-        else:
-            State.view_id = view.id()
-
-    def reset_preview_mode(self):
-        if State.view_id:
-            self.revert_changes()
-            State.view_id = 0
-
-    def revert_changes(self):
-        """ Revert changes for clean undo history """
-        last_command = self.view.command_history( 0 )
-
-        if last_command[0].endswith( self.command ):
-            self.view.run_command( self.action )
-
-
 class IncrementorFindRegexInputHandler(LivePreviewInputHandler, sublime_plugin.TextInputHandler):
     def __init__(self, view):
         LivePreviewInputHandler.__init__( self, 'incrementor_highlight', 'soft_undo' )
@@ -512,14 +554,14 @@ class IncrementorFindRegexInputHandler(LivePreviewInputHandler, sublime_plugin.T
         self.view.add_regions( 'IncrementorMarks', selected_regions )
         self.view.run_command( 'incrementor_selection_mark_restore' )
 
-    def validate(self, find_regex):
+    def validate(self, text):
 
-        if len( find_regex ):
+        if len( text ):
             try:
-                return bool( re.compile( find_regex ) )
+                return bool( re.compile( text ) )
 
             except Exception as error:
-                print( "Incrementor: '%s'" % error )
+                status( "%s, %s", text, error )
 
     def next_input(self, args):
 
@@ -547,11 +589,10 @@ class IncrementorReplaceInputHandler(LivePreviewInputHandler, sublime_plugin.Tex
     def preview(self, text):
 
         if self.validate( text ):
-            view = self.view
             self.start_preview_mode()
 
             def delayed():
-                view.run_command( 'incrementor_replace_helper', {
+                self.view.run_command( 'incrementor_replace_helper', {
                         'regex_to_find': State.last_find_input,
                         'replace_matches_with': text,
                     } )
@@ -568,8 +609,8 @@ class IncrementorReplaceInputHandler(LivePreviewInputHandler, sublime_plugin.Tex
         State.last_replace_input = text
 
 
-def status(msg):
-    msg = "[Incrementor] %s" % msg
+def status(msg, *args):
+    msg = "[Incrementor] %s" % ( msg % args )
     print( msg )
     sublime.status_message( msg )
 
