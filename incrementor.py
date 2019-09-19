@@ -18,8 +18,8 @@ from functools import partial
 from types import GeneratorType
 
 
-# I am saving the state in this class because it is a royal pain in the ass to keep typing `global`
-# every time/everywhere I would like to use a global!
+# I am saving the state in this class because it is a royal pain in the ass
+# to keep typing `global` every time/everywhere I would like to use a global!
 class State(object):
     ## While this is not 0, the input panel is open
     view_id = 0
